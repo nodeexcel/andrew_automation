@@ -1,0 +1,73 @@
+# Trustpilot Bot Configuration
+# Copy this file to config.yaml and customize for your campaigns.
+
+settings:
+  # Run duration in hours (default: 24)
+  run_duration_hours: 24
+
+  # Page view duration range (seconds)
+  min_page_duration: 25
+  max_page_duration: 90
+
+  # Delay between tasks per worker (seconds) — spread proxy usage
+  min_task_interval: 180
+  max_task_interval: 900
+
+  # Number of concurrent browser workers
+  max_workers: 3
+
+  # Run browsers headless (set false to watch automation)
+  headless: true
+
+  # Trustpilot locale base (de, www, uk, etc.)
+  trustpilot_locale: de
+
+  # Log file path
+  log_file: logs/bot.log
+
+# Proxy list — one proxy per line in proxies.txt, or inline here
+proxies:
+  file: proxies.txt
+  # Or define inline (file takes precedence if both exist):
+  # list:
+  #   - "http://user:pass@host1:8080"
+  #   - "http://user:pass@host2:8080"
+
+# Campaigns define source → target navigation patterns
+campaigns:
+  - name: "xsbets via cryptocasino"
+    enabled: true
+
+    # Source pages to visit before navigating to target
+    source_urls:
+      - "https://de.trustpilot.com/review/cryptocasinodeutschland.de"
+      - "https://de.trustpilot.com/review/another-source.de"
+
+    # Target page URL (where we want to end up)
+    target_url: "https://de.trustpilot.com/review/xsbets.com"
+
+    # Keywords to search on Trustpilot (used when search job runs)
+    target_keywords:
+      - "xsbets"
+      - "xsbets.com"
+      - "XS Bets"
+
+    # How many of each job type to run over the 24h period
+    jobs:
+      direct_visit: 20        # Visit source URL, scroll, leave
+      search_navigate: 30     # Search keyword → click result → view target
+      suggested_click: 15     # Click target in "suggested" section if visible
+      target_direct: 10       # Visit target URL directly
+
+  - name: "second campaign example"
+    enabled: false
+    source_urls:
+      - "https://de.trustpilot.com/review/example-source.com"
+    target_url: "https://de.trustpilot.com/review/example-target.com"
+    target_keywords:
+      - "example target"
+    jobs:
+      direct_visit: 10
+      search_navigate: 20
+      suggested_click: 5
+      target_direct: 5

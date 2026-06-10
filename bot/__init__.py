@@ -1,0 +1,1 @@
+"""Trustpilot automation bot package."""
