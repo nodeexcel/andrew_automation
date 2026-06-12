@@ -25,6 +25,13 @@ settings:
   # Log file path
   log_file: logs/bot.log
 
+  # Browse at least N Trustpilot pages per journey (not just A→B)
+  min_journey_depth: 10
+  max_journey_depth: 15
+
+  # Click out from Trustpilot to the real business website
+  click_out_external: true
+
 # Proxy list — one proxy per line in proxies.txt, or inline here
 proxies:
   file: proxies.txt
@@ -51,6 +58,11 @@ campaigns:
       - "xsbets"
       - "xsbets.com"
       - "XS Bets"
+
+    # Real business websites — bot clicks out of Trustpilot to these
+    external_target_urls:
+      - "https://xsbets.com"
+      - "https://www.xsbets.com"
 
     # How many of each job type to run over the 24h period
     jobs:

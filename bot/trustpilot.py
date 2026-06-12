@@ -186,6 +186,35 @@ def _focus_and_type(page: Page, text: str) -> bool:
     return False
 
 
+def search_from_current_page(
+    page: Page,
+    search_term: str,
+    target_url: str,
+    target_keywords: list[str],
+    min_duration: int,
+    max_duration: int,
+) -> bool:
+    """Search Trustpilot from whatever page is currently open."""
+    if not _search_input_exists(page):
+        return False
+    if not _focus_and_type(page, search_term):
+        return False
+    page.wait_for_timeout(random_delay_ms(1500, 3000))
+
+    clicked = _click_search_result(page, target_url, target_keywords)
+    if not clicked:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(random_delay_ms(2000, 4000))
+        clicked = _click_search_result(page, target_url, target_keywords)
+    if not clicked:
+        return False
+
+    page.wait_for_load_state("domcontentloaded", timeout=30000)
+    page.wait_for_timeout(random_delay_ms(1500, 3000))
+    dwell_on_page(page, min_duration, max_duration)
+    return True
+
+
 def search_and_navigate(
     page: Page,
     source_url: str,
@@ -217,7 +246,7 @@ def search_and_navigate(
 
         clicked = _click_search_result(page, target_url, target_keywords)
         if not clicked:
-            search_input.press("Enter")
+            page.keyboard.press("Enter")
             page.wait_for_timeout(random_delay_ms(2000, 4000))
             clicked = _click_search_result(page, target_url, target_keywords)
 

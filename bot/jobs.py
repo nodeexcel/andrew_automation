@@ -11,7 +11,7 @@ from enum import Enum
 from bot.browser import browser_session
 from bot.config import Campaign, Settings
 from bot.devices import DESKTOP_PROFILES, random_device
-from bot import trustpilot
+from bot import journey, trustpilot
 
 logger = logging.getLogger("trustpilot_bot")
 
@@ -31,6 +31,7 @@ class Job:
     target_url: str
     search_term: str
     target_keywords: list[str]
+    external_target_urls: list[str]
     scheduled_at: float  # unix timestamp
 
 
@@ -61,6 +62,7 @@ def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> lis
                     target_url=campaign.target_url,
                     search_term="",
                     target_keywords=campaign.target_keywords,
+                    external_target_urls=campaign.external_target_urls,
                     scheduled_at=start_time + random.uniform(0, run_seconds),
                 )
             )
@@ -76,6 +78,7 @@ def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> lis
                     target_url=campaign.target_url,
                     search_term=keyword,
                     target_keywords=campaign.target_keywords,
+                    external_target_urls=campaign.external_target_urls,
                     scheduled_at=start_time + random.uniform(0, run_seconds),
                 )
             )
@@ -90,6 +93,7 @@ def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> lis
                     target_url=campaign.target_url,
                     search_term="",
                     target_keywords=campaign.target_keywords,
+                    external_target_urls=campaign.external_target_urls,
                     scheduled_at=start_time + random.uniform(0, run_seconds),
                 )
             )
@@ -103,6 +107,7 @@ def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> lis
                     target_url=campaign.target_url,
                     search_term="",
                     target_keywords=campaign.target_keywords,
+                    external_target_urls=campaign.external_target_urls,
                     scheduled_at=start_time + random.uniform(0, run_seconds),
                 )
             )
@@ -144,41 +149,55 @@ def execute_job(
             proxy=proxy,
             device=device,
         ) as (_, _, _, page):
+            journey_kwargs = dict(
+                page=page,
+                start_url=job.source_url,
+                trustpilot_target=job.target_url,
+                external_urls=job.external_target_urls,
+                keywords=job.target_keywords,
+                search_term=job.search_term,
+                min_depth=settings.min_journey_depth,
+                max_depth=settings.max_journey_depth,
+                min_duration=settings.min_page_duration,
+                max_duration=settings.max_page_duration,
+                click_external=settings.click_out_external,
+            )
+
             if job.job_type == JobType.DIRECT_VISIT:
-                return trustpilot.visit_url(
+                pages = journey._browse_trustpilot_depth(
                     page,
                     job.source_url,
+                    random.randint(settings.min_journey_depth, settings.max_journey_depth),
+                    journey._external_domains(
+                        job.external_target_urls, job.target_url, job.target_keywords
+                    ),
                     settings.min_page_duration,
                     settings.max_page_duration,
                 )
+                return pages >= settings.min_journey_depth
 
             if job.job_type == JobType.SEARCH_NAVIGATE:
-                return trustpilot.search_and_navigate(
-                    page,
-                    job.source_url,
-                    job.search_term,
-                    job.target_url,
-                    job.target_keywords,
-                    settings.min_page_duration,
-                    settings.max_page_duration,
+                return journey.run_deep_journey(
+                    **journey_kwargs,
+                    steer_via_search=True,
                 )
 
             if job.job_type == JobType.SUGGESTED_CLICK:
-                return trustpilot.click_suggested_website(
-                    page,
-                    job.source_url,
-                    job.target_url,
-                    job.target_keywords,
-                    settings.min_page_duration,
-                    settings.max_page_duration,
+                return journey.run_deep_journey(
+                    **journey_kwargs,
+                    steer_via_search=False,
                 )
 
             if job.job_type == JobType.TARGET_DIRECT:
-                return trustpilot.visit_url(
-                    page,
-                    job.target_url,
-                    settings.min_page_duration,
-                    settings.max_page_duration,
+                locale = settings.trustpilot_locale
+                entry = (
+                    f"https://{locale}.trustpilot.com"
+                    if locale != "www"
+                    else "https://www.trustpilot.com"
+                )
+                return journey.run_deep_journey(
+                    **{**journey_kwargs, "start_url": entry},
+                    steer_via_search=True,
                 )
 
     except Exception as exc:

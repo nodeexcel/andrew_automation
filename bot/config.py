@@ -34,6 +34,7 @@ class Campaign:
     source_urls: list[str]
     target_url: str
     target_keywords: list[str]
+    external_target_urls: list[str]
     jobs: JobCounts
 
 
@@ -48,6 +49,9 @@ class Settings:
     headless: bool = True
     trustpilot_locale: str = "de"
     log_file: str = "logs/bot.log"
+    min_journey_depth: int = 10
+    max_journey_depth: int = 15
+    click_out_external: bool = True
 
 
 @dataclass
@@ -92,6 +96,9 @@ def load_config(path: str | Path) -> Config:
         headless=bool(settings_data.get("headless", True)),
         trustpilot_locale=str(settings_data.get("trustpilot_locale", "de")),
         log_file=str(settings_data.get("log_file", "logs/bot.log")),
+        min_journey_depth=int(settings_data.get("min_journey_depth", 10)),
+        max_journey_depth=int(settings_data.get("max_journey_depth", 15)),
+        click_out_external=bool(settings_data.get("click_out_external", True)),
     )
 
     campaigns: list[Campaign] = []
@@ -104,6 +111,7 @@ def load_config(path: str | Path) -> Config:
                 source_urls=list(c.get("source_urls", [])),
                 target_url=str(c.get("target_url", "")),
                 target_keywords=list(c.get("target_keywords", [])),
+                external_target_urls=list(c.get("external_target_urls", [])),
                 jobs=JobCounts(
                     direct_visit=int(jobs_data.get("direct_visit", 0)),
                     search_navigate=int(jobs_data.get("search_navigate", 0)),

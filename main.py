@@ -69,15 +69,18 @@ def main() -> int:
             return 1
         source = campaign.source_urls[0]
         keyword = campaign.target_keywords[0] if campaign.target_keywords else campaign.target_url
-        tests = [
-            Job(JobType.DIRECT_VISIT, campaign.name, source, campaign.target_url, "", campaign.target_keywords, 0),
-            Job(JobType.SEARCH_NAVIGATE, campaign.name, source, campaign.target_url, keyword, campaign.target_keywords, 0),
-            Job(JobType.SUGGESTED_CLICK, campaign.name, source, campaign.target_url, "", campaign.target_keywords, 0),
-            Job(JobType.TARGET_DIRECT, campaign.name, "", campaign.target_url, "", campaign.target_keywords, 0),
-        ]
         config.settings.headless = False
         config.settings.min_page_duration = 8
         config.settings.max_page_duration = 15
+        config.settings.min_journey_depth = 3
+        config.settings.max_journey_depth = 5
+        ext = campaign.external_target_urls
+        tests = [
+            Job(JobType.DIRECT_VISIT, campaign.name, source, campaign.target_url, "", campaign.target_keywords, ext, 0),
+            Job(JobType.SEARCH_NAVIGATE, campaign.name, source, campaign.target_url, keyword, campaign.target_keywords, ext, 0),
+            Job(JobType.SUGGESTED_CLICK, campaign.name, source, campaign.target_url, "", campaign.target_keywords, ext, 0),
+            Job(JobType.TARGET_DIRECT, campaign.name, "", campaign.target_url, "", campaign.target_keywords, ext, 0),
+        ]
         logger.info("Running quick test of all 4 job types (browser visible)...")
         results = {}
         for job in tests:
