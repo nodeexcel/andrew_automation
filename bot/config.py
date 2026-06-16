@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from bot.lists import keywords_from_target_file, terms_from_file
+
 
 @dataclass
 class JobCounts:
@@ -31,7 +33,8 @@ class JobCounts:
 class Campaign:
     name: str
     enabled: bool
-    source_urls: list[str]
+    random_browse_terms: list[str]
+    rank_page_terms: list[str]
     target_url: str
     target_keywords: list[str]
     external_target_urls: list[str]
@@ -47,7 +50,7 @@ class Settings:
     max_task_interval: int = 900
     max_workers: int = 3
     headless: bool = True
-    trustpilot_locale: str = "de"
+    trustpilot_locale: str = "www"
     log_file: str = "logs/bot.log"
     min_journey_depth: int = 10
     max_journey_depth: int = 15
@@ -77,10 +80,18 @@ def _load_proxies(data: dict[str, Any], config_dir: Path) -> list[str]:
     return [p.strip() for p in inline if p.strip()]
 
 
+def _resolve_list_path(config_dir: Path, campaign: dict, key: str, default: str) -> Path:
+    lists_section = campaign.get("lists", {})
+    rel = lists_section.get(key) or default
+    return config_dir / rel
+
+
 def load_config(path: str | Path) -> Config:
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config not found: {config_path}")
+
+    config_dir = config_path.parent
 
     with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
@@ -94,7 +105,7 @@ def load_config(path: str | Path) -> Config:
         max_task_interval=int(settings_data.get("max_task_interval", 900)),
         max_workers=int(settings_data.get("max_workers", 3)),
         headless=bool(settings_data.get("headless", True)),
-        trustpilot_locale=str(settings_data.get("trustpilot_locale", "de")),
+        trustpilot_locale=str(settings_data.get("trustpilot_locale", "www")),
         log_file=str(settings_data.get("log_file", "logs/bot.log")),
         min_journey_depth=int(settings_data.get("min_journey_depth", 10)),
         max_journey_depth=int(settings_data.get("max_journey_depth", 15)),
@@ -103,14 +114,28 @@ def load_config(path: str | Path) -> Config:
 
     campaigns: list[Campaign] = []
     for c in data.get("campaigns", []):
+        list_a = _resolve_list_path(config_dir, c, "random_browse_file", "lists/list_a.txt")
+        list_b = _resolve_list_path(config_dir, c, "rank_pages_file", "lists/list_b.txt")
+        target_file = _resolve_list_path(config_dir, c, "target_file", "lists/target.txt")
+
+        random_terms = terms_from_file(list_a)
+        rank_terms = terms_from_file(list_b)
+        target_url, target_keywords = keywords_from_target_file(target_file)
+
+        if c.get("target_url"):
+            target_url = str(c["target_url"])
+        if c.get("target_keywords"):
+            target_keywords = list(c["target_keywords"])
+
         jobs_data = c.get("jobs", {})
         campaigns.append(
             Campaign(
                 name=c.get("name", "unnamed"),
                 enabled=bool(c.get("enabled", True)),
-                source_urls=list(c.get("source_urls", [])),
-                target_url=str(c.get("target_url", "")),
-                target_keywords=list(c.get("target_keywords", [])),
+                random_browse_terms=random_terms,
+                rank_page_terms=rank_terms,
+                target_url=target_url,
+                target_keywords=target_keywords,
                 external_target_urls=list(c.get("external_target_urls", [])),
                 jobs=JobCounts(
                     direct_visit=int(jobs_data.get("direct_visit", 0)),
@@ -121,7 +146,7 @@ def load_config(path: str | Path) -> Config:
             )
         )
 
-    proxies = _load_proxies(data, config_path.parent)
+    proxies = _load_proxies(data, config_dir)
 
     return Config(settings=settings, campaigns=campaigns, proxies=proxies)
 

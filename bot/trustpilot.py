@@ -265,38 +265,106 @@ def search_and_navigate(
         return False
 
 
-def _click_search_result(page: Page, target_url: str, target_keywords: list[str]) -> bool:
-    for selector in SEARCH_RESULT_SELECTORS:
-        links = page.locator(selector)
-        count = links.count()
-        for i in range(min(count, 20)):
-            link = links.nth(i)
-            try:
-                if not link.is_visible():
-                    continue
-                href = link.get_attribute("href") or ""
-                text = link.inner_text(timeout=2000)
-                if _matches_target(text, href, target_url, target_keywords):
-                    link.click()
-                    return True
-            except Exception:
-                continue
+def _click_search_result(
+    page: Page,
+    target_url: str,
+    target_keywords: list[str],
+    avoid_slugs: set[str] | None = None,
+    pick_first_valid: bool = False,
+) -> bool:
+    avoid = list(avoid_slugs or set())
+    target_slug = _domain_from_url(target_url)
 
-    all_review_links = page.locator('a[href*="/review/"]')
-    for i in range(min(all_review_links.count(), 30)):
-        link = all_review_links.nth(i)
+    for attempt in range(3):
         try:
-            if not link.is_visible():
-                continue
-            href = link.get_attribute("href") or ""
-            text = link.inner_text(timeout=2000)
-            if _matches_target(text, href, target_url, target_keywords):
-                link.click()
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            page.wait_for_timeout(random_delay_ms(800, 1500))
+            clicked = page.evaluate(
+                """({ pickFirst, avoid, targetSlug, keywords }) => {
+                    const norm = (t) => (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const kws = keywords.map(norm);
+                    const avoidNorm = avoid.map(norm).filter(Boolean);
+                    const links = [...document.querySelectorAll('a[href*="/review/"]')]
+                        .filter(el => el.offsetParent !== null && el.href.startsWith('http'));
+
+                    for (const el of links) {
+                        const href = el.href.toLowerCase();
+                        const text = (el.innerText || '').toLowerCase();
+                        const blob = norm(href + text);
+                        if (avoidNorm.some(s => s && blob.includes(s))) continue;
+
+                        if (pickFirst) {
+                            el.click();
+                            return true;
+                        }
+                        if (targetSlug && href.includes(targetSlug.toLowerCase())) {
+                            el.click();
+                            return true;
+                        }
+                        if (kws.some(k => k && (blob.includes(k) || norm(el.innerText).includes(k)))) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                {
+                    "pickFirst": pick_first_valid,
+                    "avoid": avoid,
+                    "targetSlug": target_slug,
+                    "keywords": target_keywords,
+                },
+            )
+            if clicked:
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
                 return True
-        except Exception:
-            continue
+        except Exception as exc:
+            logger.debug("Search click attempt %d failed: %s", attempt + 1, exc)
+            page.wait_for_timeout(random_delay_ms(1000, 2000))
 
     return False
+
+
+def search_and_open(
+    page: Page,
+    search_term: str,
+    match_url: str,
+    match_keywords: list[str],
+    min_duration: int,
+    max_duration: int,
+    avoid_slugs: set[str] | None = None,
+    pick_first_valid: bool = False,
+) -> bool:
+    """
+    Type into Trustpilot search and click a result — never uses the address bar for review URLs.
+    """
+    try:
+        if not _search_input_exists(page):
+            logger.warning("Search input not found on %s", page.url)
+            return False
+        if not _focus_and_type(page, search_term):
+            logger.warning("Could not type search term '%s'", search_term)
+            return False
+        page.wait_for_timeout(random_delay_ms(1500, 3000))
+
+        clicked = _click_search_result(
+            page, match_url, match_keywords, avoid_slugs, pick_first_valid
+        )
+        if not clicked:
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(random_delay_ms(2000, 4000))
+            clicked = _click_search_result(
+                page, match_url, match_keywords, avoid_slugs, pick_first_valid
+            )
+        if not clicked:
+            return False
+
+        page.wait_for_timeout(random_delay_ms(1500, 3000))
+        dwell_on_page(page, max(5, min_duration // 3), max(12, max_duration // 3))
+        return True
+    except Exception as exc:
+        logger.warning("Search and open failed for '%s': %s", search_term, exc)
+        return False
 
 
 def click_suggested_website(
