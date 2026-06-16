@@ -11,7 +11,7 @@ from enum import Enum
 from bot.browser import browser_session
 from bot.config import Campaign, Settings
 from bot.devices import DESKTOP_PROFILES, random_device
-from bot import journey, trustpilot
+from bot import journey
 
 logger = logging.getLogger("trustpilot_bot")
 
@@ -27,19 +27,16 @@ class JobType(str, Enum):
 class Job:
     job_type: JobType
     campaign_name: str
-    source_url: str
+    random_browse_terms: list[str]
+    rank_page_terms: list[str]
     target_url: str
     search_term: str
     target_keywords: list[str]
     external_target_urls: list[str]
-    scheduled_at: float  # unix timestamp
+    scheduled_at: float
 
 
 def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> list[Job]:
-    """
-    Build a shuffled queue of all jobs spread across the run duration.
-    Each job gets a random scheduled time within the period.
-    """
     jobs: list[Job] = []
     run_seconds = run_duration_hours * 3600
     start_time = time.time()
@@ -48,69 +45,40 @@ def build_job_queue(campaigns: list[Campaign], run_duration_hours: float) -> lis
         if not campaign.enabled:
             continue
 
-        if not campaign.source_urls and campaign.jobs.direct_visit + campaign.jobs.suggested_click + campaign.jobs.search_navigate > 0:
-            logger.warning("Campaign '%s' has no source URLs", campaign.name)
+        if not campaign.random_browse_terms:
+            logger.warning("Campaign '%s' has empty List A", campaign.name)
             continue
 
-        for _ in range(campaign.jobs.direct_visit):
-            source = random.choice(campaign.source_urls)
-            jobs.append(
-                Job(
-                    job_type=JobType.DIRECT_VISIT,
-                    campaign_name=campaign.name,
-                    source_url=source,
-                    target_url=campaign.target_url,
-                    search_term="",
-                    target_keywords=campaign.target_keywords,
-                    external_target_urls=campaign.external_target_urls,
-                    scheduled_at=start_time + random.uniform(0, run_seconds),
-                )
+        keyword = (
+            random.choice(campaign.target_keywords)
+            if campaign.target_keywords
+            else _domain_from_target(campaign.target_url)
+        )
+
+        def _make_job(job_type: JobType, term: str = "") -> Job:
+            return Job(
+                job_type=job_type,
+                campaign_name=campaign.name,
+                random_browse_terms=campaign.random_browse_terms,
+                rank_page_terms=campaign.rank_page_terms,
+                target_url=campaign.target_url,
+                search_term=term or keyword,
+                target_keywords=campaign.target_keywords,
+                external_target_urls=campaign.external_target_urls,
+                scheduled_at=start_time + random.uniform(0, run_seconds),
             )
+
+        for _ in range(campaign.jobs.direct_visit):
+            jobs.append(_make_job(JobType.DIRECT_VISIT))
 
         for _ in range(campaign.jobs.search_navigate):
-            source = random.choice(campaign.source_urls)
-            keyword = random.choice(campaign.target_keywords) if campaign.target_keywords else _domain_from_target(campaign.target_url)
-            jobs.append(
-                Job(
-                    job_type=JobType.SEARCH_NAVIGATE,
-                    campaign_name=campaign.name,
-                    source_url=source,
-                    target_url=campaign.target_url,
-                    search_term=keyword,
-                    target_keywords=campaign.target_keywords,
-                    external_target_urls=campaign.external_target_urls,
-                    scheduled_at=start_time + random.uniform(0, run_seconds),
-                )
-            )
+            jobs.append(_make_job(JobType.SEARCH_NAVIGATE, keyword))
 
         for _ in range(campaign.jobs.suggested_click):
-            source = random.choice(campaign.source_urls)
-            jobs.append(
-                Job(
-                    job_type=JobType.SUGGESTED_CLICK,
-                    campaign_name=campaign.name,
-                    source_url=source,
-                    target_url=campaign.target_url,
-                    search_term="",
-                    target_keywords=campaign.target_keywords,
-                    external_target_urls=campaign.external_target_urls,
-                    scheduled_at=start_time + random.uniform(0, run_seconds),
-                )
-            )
+            jobs.append(_make_job(JobType.SUGGESTED_CLICK))
 
         for _ in range(campaign.jobs.target_direct):
-            jobs.append(
-                Job(
-                    job_type=JobType.TARGET_DIRECT,
-                    campaign_name=campaign.name,
-                    source_url="",
-                    target_url=campaign.target_url,
-                    search_term="",
-                    target_keywords=campaign.target_keywords,
-                    external_target_urls=campaign.external_target_urls,
-                    scheduled_at=start_time + random.uniform(0, run_seconds),
-                )
-            )
+            jobs.append(_make_job(JobType.TARGET_DIRECT, keyword))
 
     jobs.sort(key=lambda j: j.scheduled_at)
     random.shuffle(jobs)
@@ -125,17 +93,8 @@ def _domain_from_target(target_url: str) -> str:
     return match.group(1) if match else target_url
 
 
-def execute_job(
-    job: Job,
-    settings: Settings,
-    proxy: str | None,
-) -> bool:
-    """Execute a single job in its own browser session."""
-    # Search navigation works most reliably on desktop layouts
-    if job.job_type == JobType.SEARCH_NAVIGATE:
-        device = random.choice(DESKTOP_PROFILES)
-    else:
-        device = random_device()
+def execute_job(job: Job, settings: Settings, proxy: str | None) -> bool:
+    device = random.choice(DESKTOP_PROFILES) if job.job_type != JobType.DIRECT_VISIT else random_device()
     logger.info(
         "Executing %s | campaign=%s | device=%s",
         job.job_type.value,
@@ -144,17 +103,15 @@ def execute_job(
     )
 
     try:
-        with browser_session(
-            headless=settings.headless,
-            proxy=proxy,
-            device=device,
-        ) as (_, _, _, page):
+        with browser_session(headless=settings.headless, proxy=proxy, device=device) as (_, _, _, page):
             journey_kwargs = dict(
                 page=page,
-                start_url=job.source_url,
+                locale=settings.trustpilot_locale,
+                random_terms=job.random_browse_terms,
+                rank_terms=job.rank_page_terms,
                 trustpilot_target=job.target_url,
+                target_keywords=job.target_keywords,
                 external_urls=job.external_target_urls,
-                keywords=job.target_keywords,
                 search_term=job.search_term,
                 min_depth=settings.min_journey_depth,
                 max_depth=settings.max_journey_depth,
@@ -164,44 +121,13 @@ def execute_job(
             )
 
             if job.job_type == JobType.DIRECT_VISIT:
-                pages = journey._browse_trustpilot_depth(
-                    page,
-                    job.source_url,
-                    random.randint(settings.min_journey_depth, settings.max_journey_depth),
-                    journey._external_domains(
-                        job.external_target_urls, job.target_url, job.target_keywords
-                    ),
-                    settings.min_page_duration,
-                    settings.max_page_duration,
-                )
-                return pages >= settings.min_journey_depth
-
-            if job.job_type == JobType.SEARCH_NAVIGATE:
-                return journey.run_deep_journey(
-                    **journey_kwargs,
-                    steer_via_search=True,
-                )
+                return journey.run_search_journey(**journey_kwargs, browse_only=True)
 
             if job.job_type == JobType.SUGGESTED_CLICK:
-                return journey.run_deep_journey(
-                    **journey_kwargs,
-                    steer_via_search=False,
-                )
+                return journey.run_search_journey(**journey_kwargs, prefer_suggested=True)
 
-            if job.job_type == JobType.TARGET_DIRECT:
-                locale = settings.trustpilot_locale
-                entry = (
-                    f"https://{locale}.trustpilot.com"
-                    if locale != "www"
-                    else "https://www.trustpilot.com"
-                )
-                return journey.run_deep_journey(
-                    **{**journey_kwargs, "start_url": entry},
-                    steer_via_search=True,
-                )
+            return journey.run_search_journey(**journey_kwargs)
 
     except Exception as exc:
         logger.error("Job execution error (%s): %s", job.job_type.value, exc)
         return False
-
-    return False

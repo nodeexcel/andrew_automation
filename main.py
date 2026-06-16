@@ -64,24 +64,22 @@ def main() -> int:
 
     if args.test:
         campaign = enabled[0]
-        if not campaign.source_urls:
-            logger.error("First campaign has no source URLs")
+        if not campaign.random_browse_terms:
+            logger.error("List A (random browse) is empty")
             return 1
-        source = campaign.source_urls[0]
         keyword = campaign.target_keywords[0] if campaign.target_keywords else campaign.target_url
         config.settings.headless = False
         config.settings.min_page_duration = 8
         config.settings.max_page_duration = 15
-        config.settings.min_journey_depth = 3
-        config.settings.max_journey_depth = 5
-        ext = campaign.external_target_urls
+        config.settings.min_journey_depth = 2
+        config.settings.max_journey_depth = 3
         tests = [
-            Job(JobType.DIRECT_VISIT, campaign.name, source, campaign.target_url, "", campaign.target_keywords, ext, 0),
-            Job(JobType.SEARCH_NAVIGATE, campaign.name, source, campaign.target_url, keyword, campaign.target_keywords, ext, 0),
-            Job(JobType.SUGGESTED_CLICK, campaign.name, source, campaign.target_url, "", campaign.target_keywords, ext, 0),
-            Job(JobType.TARGET_DIRECT, campaign.name, "", campaign.target_url, "", campaign.target_keywords, ext, 0),
+            Job(JobType.DIRECT_VISIT, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, "", campaign.target_keywords, campaign.external_target_urls, 0),
+            Job(JobType.SEARCH_NAVIGATE, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, keyword, campaign.target_keywords, campaign.external_target_urls, 0),
+            Job(JobType.SUGGESTED_CLICK, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, keyword, campaign.target_keywords, campaign.external_target_urls, 0),
+            Job(JobType.TARGET_DIRECT, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, keyword, campaign.target_keywords, campaign.external_target_urls, 0),
         ]
-        logger.info("Running quick test of all 4 job types (browser visible)...")
+        logger.info("Running quick test (search-only mode, browser visible)...")
         results = {}
         for job in tests:
             logger.info("--- Testing %s ---", job.job_type.value)
@@ -99,13 +97,15 @@ def main() -> int:
         print()
         for campaign in enabled:
             print(f"Campaign: {campaign.name}")
-            print(f"  Sources: {len(campaign.source_urls)} URLs")
+            print(f"  List A (random browse): {len(campaign.random_browse_terms)} terms")
+            print(f"  List B (rank pages):   {len(campaign.rank_page_terms)} terms")
             print(f"  Target:  {campaign.target_url}")
             print(f"  Keywords: {campaign.target_keywords}")
             print(f"  Jobs: {campaign.jobs.total} total")
             print()
         print(f"Workers: {config.settings.max_workers}")
         print(f"Proxies: {len(config.proxies)}")
+        print("Navigation: Trustpilot internal search only (no review URLs in address bar)")
         return 0
 
     scheduler = Scheduler(config)
