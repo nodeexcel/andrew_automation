@@ -19,6 +19,7 @@ import sys
 
 from bot.config import get_config_path, load_config
 from bot.jobs import Job, JobType, build_job_queue, execute_job
+from bot.reporting import CsvReporter
 from bot.logger import setup_logger
 from bot.scheduler import Scheduler, _job_type_summary
 
@@ -80,13 +81,17 @@ def main() -> int:
             Job(JobType.TARGET_DIRECT, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, keyword, campaign.target_keywords, campaign.external_target_urls, 0),
         ]
         logger.info("Running quick test (search-only mode, browser visible)...")
+        csv = CsvReporter(config.settings.csv_file)
         results = {}
         for job in tests:
             logger.info("--- Testing %s ---", job.job_type.value)
-            results[job.job_type.value] = execute_job(job, config.settings, None)
+            result = execute_job(job, config.settings, None)
+            csv.write(result)
+            results[job.job_type.value] = result.success
         print("\nTest results:")
         for name, ok in results.items():
             print(f"  {name}: {'PASS' if ok else 'FAIL'}")
+        print(f"\nCSV results saved to: {config.settings.csv_file}")
         return 0 if all(results.values()) else 1
 
     if args.dry_run:
@@ -105,6 +110,7 @@ def main() -> int:
             print()
         print(f"Workers: {config.settings.max_workers}")
         print(f"Proxies: {len(config.proxies)}")
+        print(f"CSV results: {config.settings.csv_file}")
         print("Navigation: Trustpilot internal search only (no review URLs in address bar)")
         return 0
 

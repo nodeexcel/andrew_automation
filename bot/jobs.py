@@ -12,6 +12,7 @@ from bot.browser import browser_session
 from bot.config import Campaign, Settings
 from bot.devices import DESKTOP_PROFILES, random_device
 from bot import journey
+from bot.reporting import JobResult
 
 logger = logging.getLogger("trustpilot_bot")
 
@@ -93,13 +94,21 @@ def _domain_from_target(target_url: str) -> str:
     return match.group(1) if match else target_url
 
 
-def execute_job(job: Job, settings: Settings, proxy: str | None) -> bool:
+def execute_job(job: Job, settings: Settings, proxy: str | None) -> JobResult:
     device = random.choice(DESKTOP_PROFILES) if job.job_type != JobType.DIRECT_VISIT else random_device()
     logger.info(
         "Executing %s | campaign=%s | device=%s",
         job.job_type.value,
         job.campaign_name,
         device.name,
+    )
+
+    base = JobResult(
+        success=False,
+        job_type=job.job_type.value,
+        campaign_name=job.campaign_name,
+        target_url=job.target_url,
+        device=device.name,
     )
 
     try:
@@ -121,13 +130,21 @@ def execute_job(job: Job, settings: Settings, proxy: str | None) -> bool:
             )
 
             if job.job_type == JobType.DIRECT_VISIT:
-                return journey.run_search_journey(**journey_kwargs, browse_only=True)
+                outcome = journey.run_search_journey(**journey_kwargs, browse_only=True)
+            elif job.job_type == JobType.SUGGESTED_CLICK:
+                outcome = journey.run_search_journey(**journey_kwargs, prefer_suggested=True)
+            else:
+                outcome = journey.run_search_journey(**journey_kwargs)
 
-            if job.job_type == JobType.SUGGESTED_CLICK:
-                return journey.run_search_journey(**journey_kwargs, prefer_suggested=True)
-
-            return journey.run_search_journey(**journey_kwargs)
+            base.success = outcome.success
+            base.list_b_page = outcome.rank_page_term
+            base.list_b_url = outcome.rank_page_url
+            base.target_reached = outcome.target_reached
+            base.final_url = outcome.final_url or page.url
+            base.error = outcome.error
 
     except Exception as exc:
         logger.error("Job execution error (%s): %s", job.job_type.value, exc)
-        return False
+        base.error = str(exc)
+
+    return base

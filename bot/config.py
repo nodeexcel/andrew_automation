@@ -52,6 +52,7 @@ class Settings:
     headless: bool = True
     trustpilot_locale: str = "www"
     log_file: str = "logs/bot.log"
+    csv_file: str = "logs/results.csv"
     min_journey_depth: int = 10
     max_journey_depth: int = 15
     click_out_external: bool = True
@@ -107,6 +108,7 @@ def load_config(path: str | Path) -> Config:
         headless=bool(settings_data.get("headless", True)),
         trustpilot_locale=str(settings_data.get("trustpilot_locale", "www")),
         log_file=str(settings_data.get("log_file", "logs/bot.log")),
+        csv_file=str(settings_data.get("csv_file", "logs/results.csv")),
         min_journey_depth=int(settings_data.get("min_journey_depth", 10)),
         max_journey_depth=int(settings_data.get("max_journey_depth", 15)),
         click_out_external=bool(settings_data.get("click_out_external", True)),

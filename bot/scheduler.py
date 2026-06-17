@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from bot.config import Config
 from bot.jobs import Job, build_job_queue, execute_job
+from bot.reporting import CsvReporter
 
 logger = logging.getLogger("trustpilot_bot")
 
@@ -24,6 +25,7 @@ class Scheduler:
         self._proxy_lock = threading.Lock()
         self._stats = {"completed": 0, "failed": 0, "skipped": 0}
         self._stats_lock = threading.Lock()
+        self._csv = CsvReporter(config.settings.csv_file)
 
     def _next_proxy(self) -> str | None:
         if not self.config.proxies:
@@ -85,8 +87,9 @@ class Scheduler:
                 continue
 
             proxy = self._next_proxy()
-            success = execute_job(job, self.settings, proxy)
-            self._record_result(success)
+            result = execute_job(job, self.settings, proxy)
+            self._csv.write(result)
+            self._record_result(result.success)
 
             if time.time() < run_end:
                 self._post_job_delay()
@@ -111,6 +114,7 @@ class Scheduler:
         logger.info("Trustpilot Bot starting")
         logger.info("Duration: %.1f hours | Workers: %d | Jobs: %d", self.settings.run_duration_hours, self.settings.max_workers, total_jobs)
         logger.info("Proxies: %d configured", len(self.config.proxies))
+        logger.info("CSV results: %s", self.settings.csv_file)
         logger.info("Campaigns: %s", ", ".join(c.name for c in enabled_campaigns))
         logger.info("=" * 60)
 
@@ -132,6 +136,7 @@ class Scheduler:
         logger.info("=" * 60)
         logger.info("Run complete in %.1f hours", elapsed / 3600)
         logger.info("Completed: %d | Failed: %d | Skipped: %d", self._stats["completed"], self._stats["failed"], self._stats["skipped"])
+        logger.info("Results saved to: %s", self.settings.csv_file)
         logger.info("=" * 60)
 
         return dict(self._stats)

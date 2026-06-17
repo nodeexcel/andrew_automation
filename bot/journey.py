@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import Page
 
 from bot.browser import dwell_on_page
+from bot.journey_result import JourneyResult
 from bot import trustpilot
 
 logger = logging.getLogger("trustpilot_bot")
@@ -241,33 +242,47 @@ def run_search_journey(
     click_external: bool = True,
     prefer_suggested: bool = False,
     browse_only: bool = False,
-) -> bool:
+) -> JourneyResult:
     """
     Full search-only journey:
     Home → List A random searches → List B rank page → target → optional external click.
     """
+    result = JourneyResult(success=False, final_url="")
+
     if not random_terms:
-        logger.error("List A (random browse) is empty")
-        return False
+        result.error = "List A (random browse) is empty"
+        logger.error(result.error)
+        return result
     if not browse_only and not rank_terms:
-        logger.error("List B (rank pages) is empty")
-        return False
+        result.error = "List B (rank pages) is empty"
+        logger.error(result.error)
+        return result
 
     if not _open_trustpilot_home(page, locale):
-        return False
+        result.error = "Could not open Trustpilot home"
+        return result
 
+    result.final_url = page.url
     depth = random.randint(min_depth, max_depth)
     avoid = _avoid_slugs(rank_terms, trustpilot_target, target_keywords)
     pages = _browse_via_search(page, random_terms, depth, avoid, min_duration, max_duration)
     logger.info("Random browse complete — %d pages via search", pages)
+    result.final_url = page.url
 
     if browse_only:
-        return pages >= 1
+        result.success = pages >= 1
+        if not result.success:
+            result.error = "Random browse did not complete"
+        return result
 
     ok, rank_term = _land_rank_page_via_search(page, rank_terms, min_duration, max_duration)
+    result.rank_page_term = rank_term
+    result.rank_page_url = page.url if ok else ""
+    result.final_url = page.url
     if not ok:
-        logger.warning("Could not reach rank page from List B via search")
-        return False
+        result.error = "Could not reach rank page from List B via search"
+        logger.warning(result.error)
+        return result
     logger.info("On rank page (List B) → %s", page.url)
 
     if not _reach_target_from_rank_page(
@@ -279,16 +294,21 @@ def run_search_journey(
         min_duration,
         max_duration,
     ):
-        logger.warning("Could not reach target from rank page")
-        return False
+        result.error = "Could not reach target from rank page"
+        logger.warning(result.error)
+        return result
 
+    result.target_reached = trustpilot._matches_target("", page.url, trustpilot_target, target_keywords)
+    result.final_url = page.url
     dwell_on_page(page, min_duration, max_duration)
     logger.info("On target page → %s", page.url)
 
     if click_external and external_urls:
         if click_out_to_external(page, external_urls, min_duration, max_duration):
-            return True
-        logger.warning("External click-out failed — target page was still reached")
-        return True
+            result.external_clicked = True
+            result.final_url = page.url
+        else:
+            logger.warning("External click-out failed — target page was still reached")
 
-    return True
+    result.success = result.target_reached
+    return result

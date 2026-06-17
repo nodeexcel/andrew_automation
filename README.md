@@ -148,9 +148,27 @@ jobs:
 - **24h scheduling** — jobs are randomly distributed across the run period
 - **Variable intervals** — random delays between tasks to spread proxy usage
 
-## Logs
+## Logs & Results
 
-Activity is logged to `logs/bot.log` and printed to the console.
+**Detailed log:** `logs/bot.log` — full activity log (printed to console too).
+
+**CSV report:** `logs/results.csv` — one row per job:
+
+| Column | Description |
+|--------|-------------|
+| `time` | When the job finished |
+| `job_type` | direct_visit, search_navigate, suggested_click, target_direct |
+| `campaign` | Campaign name |
+| `list_b_page` | List B page searched (page before target) |
+| `list_b_url` | Trustpilot URL reached for List B |
+| `target_url` | Configured target page |
+| `target_reached` | yes / no |
+| `final_url` | Last URL visited |
+| `success` | success / fail |
+| `device` | Emulated device |
+| `error` | Error message if failed |
+
+Open `logs/results.csv` in Excel or Google Sheets to review results.
 
 ## Project Structure
 
