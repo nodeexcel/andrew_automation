@@ -112,6 +112,8 @@ def execute_job(job: Job, settings: Settings, proxy: str | None) -> JobResult:
     )
 
     try:
+        if proxy:
+            logger.info("Proxy active for this job")
         with browser_session(headless=settings.headless, proxy=proxy, device=device) as (_, _, _, page):
             journey_kwargs = dict(
                 page=page,

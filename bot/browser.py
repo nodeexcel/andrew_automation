@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 from contextlib import contextmanager
 from typing import Generator
+from urllib.parse import unquote, urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
@@ -15,8 +17,38 @@ logger = logging.getLogger("trustpilot_bot")
 
 
 def _parse_proxy(proxy_url: str) -> dict:
-    """Convert proxy URL string to Playwright proxy config."""
-    return {"server": proxy_url}
+    """Convert proxy URL to Playwright proxy config (server + username + password)."""
+    parsed = urlparse(proxy_url.strip())
+    if not parsed.hostname:
+        return {"server": proxy_url}
+
+    port = parsed.port or (8080 if parsed.scheme == "http" else 1080)
+    config: dict[str, str] = {"server": f"{parsed.scheme}://{parsed.hostname}:{port}"}
+
+    if parsed.username:
+        config["username"] = unquote(parsed.username)
+    if parsed.password:
+        config["password"] = unquote(parsed.password)
+
+    return config
+
+
+def _proxy_log_label(proxy_url: str) -> str:
+    parsed = urlparse(proxy_url.strip())
+    if parsed.hostname:
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port or 8080}"
+    return proxy_url[:40]
+
+
+def verify_proxy_ip(page: Page) -> str:
+    """Fetch outbound IP seen by the browser (for proxy verification)."""
+    try:
+        page.goto("https://api.ipify.org?format=json", wait_until="domcontentloaded", timeout=30000)
+        data = page.evaluate("() => document.body.innerText")
+        return json.loads(data).get("ip", "unknown")
+    except Exception as exc:
+        logger.warning("Could not verify proxy IP: %s", exc)
+        return "unknown"
 
 
 @contextmanager
@@ -31,18 +63,13 @@ def browser_session(
     Yields (playwright, browser, context, page).
     """
     profile = device or random_device()
-    logger.debug(
-        "Starting browser | device=%s | proxy=%s",
-        profile.name,
-        proxy[:20] + "..." if proxy and len(proxy) > 20 else proxy,
-    )
+    if proxy:
+        logger.info("Using proxy: %s", _proxy_log_label(proxy))
+    else:
+        logger.warning("No proxy configured — browser will use your real IP")
 
     with sync_playwright() as p:
-        launch_kwargs: dict = {"headless": headless}
-        if proxy:
-            launch_kwargs["proxy"] = _parse_proxy(proxy)
-
-        browser = p.chromium.launch(**launch_kwargs)
+        browser = p.chromium.launch(headless=headless)
 
         context_kwargs = {
             "user_agent": profile.user_agent,
@@ -59,6 +86,9 @@ def browser_session(
                 "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
             },
         }
+
+        if proxy:
+            context_kwargs["proxy"] = _parse_proxy(proxy)
 
         context = browser.new_context(**context_kwargs)
         page = context.new_page()

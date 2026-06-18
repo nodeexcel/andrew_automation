@@ -19,9 +19,16 @@ import sys
 
 from bot.config import get_config_path, load_config
 from bot.jobs import Job, JobType, build_job_queue, execute_job
+from bot.browser import browser_session, verify_proxy_ip
 from bot.reporting import CsvReporter
 from bot.logger import setup_logger
 from bot.scheduler import Scheduler, _job_type_summary
+
+
+def _pick_proxy(proxies: list[str], index: int = 0) -> str | None:
+    if not proxies:
+        return None
+    return proxies[index % len(proxies)]
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,6 +48,11 @@ def parse_args() -> argparse.Namespace:
         "--test",
         action="store_true",
         help="Run one quick test of each job type for the first enabled campaign",
+    )
+    parser.add_argument(
+        "--check-proxy",
+        action="store_true",
+        help="Open browser through proxy and print detected IP (verifies proxy works)",
     )
     return parser.parse_args()
 
@@ -63,6 +75,20 @@ def main() -> int:
         logger.error("No enabled campaigns in %s", config_path)
         return 1
 
+    if args.check_proxy:
+        if not config.proxies:
+            logger.error("No proxies in proxies.txt — add your NodeMaven proxies first")
+            return 1
+        proxy = config.proxies[0]
+        logger.info("Checking proxy: %s", proxy.split("@")[-1] if "@" in proxy else proxy)
+        config.settings.headless = False
+        with browser_session(headless=False, proxy=proxy) as (_, _, _, page):
+            ip = verify_proxy_ip(page)
+            print(f"\nBrowser IP through proxy: {ip}")
+            print("If this matches your real IP, the proxy is NOT working.")
+            print("If it shows a different IP/location, the proxy IS working.\n")
+        return 0
+
     if args.test:
         campaign = enabled[0]
         if not campaign.random_browse_terms:
@@ -81,11 +107,14 @@ def main() -> int:
             Job(JobType.TARGET_DIRECT, campaign.name, campaign.random_browse_terms, campaign.rank_page_terms, campaign.target_url, keyword, campaign.target_keywords, campaign.external_target_urls, 0),
         ]
         logger.info("Running quick test (search-only mode, browser visible)...")
+        if not config.proxies:
+            logger.warning("No proxies loaded — test will use your real IP")
         csv = CsvReporter(config.settings.csv_file)
         results = {}
-        for job in tests:
+        for i, job in enumerate(tests):
             logger.info("--- Testing %s ---", job.job_type.value)
-            result = execute_job(job, config.settings, None)
+            proxy = _pick_proxy(config.proxies, i)
+            result = execute_job(job, config.settings, proxy)
             csv.write(result)
             results[job.job_type.value] = result.success
         print("\nTest results:")
