@@ -49,6 +49,42 @@ def _domain_from_url(url: str) -> str:
     return match.group(1).lower() if match else ""
 
 
+def _url_matches_slug(page_url: str, slug: str) -> bool:
+    if not slug:
+        return False
+    normalized = slug.lower().replace("www.", "")
+    return normalized in page_url.lower()
+
+
+def _is_review_page(page_url: str) -> bool:
+    return "/review/" in page_url and "trustpilot.com" in page_url
+
+
+def _wait_page_stable(page: Page) -> None:
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    except Exception:
+        pass
+    page.wait_for_timeout(random_delay_ms(500, 1200))
+
+
+def _safe_evaluate(page: Page, script: str, arg=None, retries: int = 3):
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            _wait_page_stable(page)
+            if arg is None:
+                return page.evaluate(script)
+            return page.evaluate(script, arg)
+        except Exception as exc:
+            last_exc = exc
+            logger.debug("Evaluate attempt %d failed: %s", attempt + 1, exc)
+            page.wait_for_timeout(random_delay_ms(800, 1500))
+    if last_exc:
+        raise last_exc
+    return None
+
+
 def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
@@ -129,29 +165,39 @@ def _accept_cookies(page: Page) -> None:
 
 def _open_mobile_search(page: Page) -> None:
     """On mobile layouts the search field may be hidden until the icon is tapped."""
-    page.evaluate(
-        """() => {
-            const selectors = [
-                'button[aria-label="Suchen"]',
-                'button[aria-label="Search"]',
-            ];
-            for (const sel of selectors) {
-                const btn = document.querySelector(sel);
-                if (btn && btn.offsetParent !== null) { btn.click(); return; }
-            }
-        }"""
-    )
+    try:
+        _safe_evaluate(
+            page,
+            """() => {
+                const selectors = [
+                    'button[aria-label="Suchen"]',
+                    'button[aria-label="Search"]',
+                ];
+                for (const sel of selectors) {
+                    const btn = document.querySelector(sel);
+                    if (btn && btn.offsetParent !== null) { btn.click(); return; }
+                }
+            }""",
+            retries=2,
+        )
+    except Exception:
+        pass
     page.wait_for_timeout(random_delay_ms(500, 1200))
 
 
 def _search_input_exists(page: Page) -> bool:
     _open_mobile_search(page)
-    return bool(
-        page.evaluate(
-            """(selectors) => selectors.some((sel) => !!document.querySelector(sel))""",
-            TRUSTPILOT_SEARCH_SELECTORS,
+    try:
+        return bool(
+            _safe_evaluate(
+                page,
+                """(selectors) => selectors.some((sel) => !!document.querySelector(sel))""",
+                TRUSTPILOT_SEARCH_SELECTORS,
+                retries=2,
+            )
         )
-    )
+    except Exception:
+        return False
 
 
 def _focus_and_type(page: Page, text: str) -> bool:
@@ -162,17 +208,22 @@ def _focus_and_type(page: Page, text: str) -> bool:
     then types character-by-character for a natural feel.
     """
     for selector in TRUSTPILOT_SEARCH_SELECTORS:
-        focused = page.evaluate(
-            """(sel) => {
-                const el = document.querySelector(sel);
-                if (!el) return false;
-                el.focus();
-                el.value = '';
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                return true;
-            }""",
-            selector,
-        )
+        try:
+            focused = _safe_evaluate(
+                page,
+                """(sel) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return false;
+                    el.focus();
+                    el.value = '';
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                }""",
+                selector,
+                retries=2,
+            )
+        except Exception:
+            continue
         if not focused:
             continue
 
@@ -181,13 +232,18 @@ def _focus_and_type(page: Page, text: str) -> bool:
             if random.random() < 0.05:
                 time.sleep(random.uniform(0.1, 0.4))
 
-        page.evaluate(
-            """(sel) => {
-                const el = document.querySelector(sel);
-                if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
-            }""",
-            selector,
-        )
+        try:
+            _safe_evaluate(
+                page,
+                """(sel) => {
+                    const el = document.querySelector(sel);
+                    if (el) el.dispatchEvent(new Event('input', { bubbles: true }));
+                }""",
+                selector,
+                retries=2,
+            )
+        except Exception:
+            pass
         return True
 
     return False
@@ -282,11 +338,23 @@ def _click_search_result(
     avoid = list(avoid_slugs or set())
     target_slug = _domain_from_url(target_url)
 
+    # Prefer Playwright locator click — more stable than evaluate during navigation
+    if target_slug and not pick_first_valid:
+        for slug_variant in {target_slug, target_slug.replace("www.", "")}:
+            try:
+                link = page.locator(f'a[href*="/review/{slug_variant}"]').first
+                if link.count() > 0 and link.is_visible():
+                    link.click(timeout=5000)
+                    _wait_page_stable(page)
+                    return True
+            except Exception:
+                pass
+
     for attempt in range(3):
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=15000)
-            page.wait_for_timeout(random_delay_ms(800, 1500))
-            clicked = page.evaluate(
+            _wait_page_stable(page)
+            clicked = _safe_evaluate(
+                page,
                 """({ pickFirst, avoid, targetSlug, keywords }) => {
                     const norm = (t) => (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                     const kws = keywords.map(norm);
@@ -321,9 +389,10 @@ def _click_search_result(
                     "targetSlug": target_slug,
                     "keywords": target_keywords,
                 },
+                retries=2,
             )
             if clicked:
-                page.wait_for_load_state("domcontentloaded", timeout=30000)
+                _wait_page_stable(page)
                 return True
         except Exception as exc:
             logger.debug("Search click attempt %d failed: %s", attempt + 1, exc)
@@ -345,33 +414,53 @@ def search_and_open(
     """
     Type into Trustpilot search and click a result — never uses the address bar for review URLs.
     """
-    try:
-        if not _search_input_exists(page):
-            logger.warning("Search input not found on %s", page.url)
-            return False
-        if not _focus_and_type(page, search_term):
-            logger.warning("Could not type search term '%s'", search_term)
-            return False
-        page.wait_for_timeout(random_delay_ms(1500, 3000))
+    expected_slug = _domain_from_url(match_url) or search_term.lower().replace("www.", "")
 
-        clicked = _click_search_result(
-            page, match_url, match_keywords, avoid_slugs, pick_first_valid
-        )
-        if not clicked:
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(random_delay_ms(2000, 4000))
+    for search_attempt in range(2):
+        try:
+            if not _search_input_exists(page):
+                logger.warning("Search input not found on %s", page.url)
+                return False
+            if not _focus_and_type(page, search_term):
+                logger.warning("Could not type search term '%s'", search_term)
+                return False
+            page.wait_for_timeout(random_delay_ms(1500, 3000))
+
             clicked = _click_search_result(
                 page, match_url, match_keywords, avoid_slugs, pick_first_valid
             )
-        if not clicked:
-            return False
+            if not clicked:
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(random_delay_ms(2000, 4000))
+                clicked = _click_search_result(
+                    page, match_url, match_keywords, avoid_slugs, pick_first_valid
+                )
+            if not clicked:
+                return False
 
-        page.wait_for_timeout(random_delay_ms(1500, 3000))
-        dwell_on_page(page, max(5, min_duration // 3), max(12, max_duration // 3))
-        return True
-    except Exception as exc:
-        logger.warning("Search and open failed for '%s': %s", search_term, exc)
-        return False
+            _wait_page_stable(page)
+
+            if pick_first_valid:
+                if not _is_review_page(page.url):
+                    logger.warning("Browse search did not land on a review page: %s", page.url)
+                    return False
+            elif expected_slug and not _url_matches_slug(page.url, expected_slug):
+                logger.warning(
+                    "Search landed on wrong page: %s (wanted %s) — retry %d/2",
+                    page.url,
+                    expected_slug,
+                    search_attempt + 1,
+                )
+                page.wait_for_timeout(random_delay_ms(1000, 2000))
+                continue
+
+            dwell_on_page(page, max(5, min_duration // 3), max(12, max_duration // 3))
+            return True
+        except Exception as exc:
+            logger.warning("Search and open failed for '%s': %s", search_term, exc)
+            page.wait_for_timeout(random_delay_ms(1000, 2000))
+
+    return False
 
 
 def click_suggested_website(

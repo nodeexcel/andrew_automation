@@ -55,8 +55,16 @@ def _open_trustpilot_home(page: Page, locale: str) -> bool:
 
 def _ensure_searchable(page: Page, locale: str) -> bool:
     """Make sure Trustpilot search is available — go home if stuck on a bad page."""
+    home_host = "www.trustpilot.com" if locale in ("www", "") else f"{locale}.trustpilot.com"
+    parsed = urlparse(page.url)
+
+    if "trustpilot.com" in parsed.netloc and parsed.netloc != home_host:
+        logger.info("Regional redirect detected (%s) — returning to %s", parsed.netloc, home_host)
+        return _open_trustpilot_home(page, locale)
+
     if trustpilot._search_input_exists(page):
         return True
+
     logger.info("Search input missing on %s — returning to Trustpilot home", page.url)
     return _open_trustpilot_home(page, locale)
 
@@ -84,13 +92,13 @@ def _browse_via_search(
             page,
             search_term=term,
             match_url=f"https://www.trustpilot.com/review/{term}",
-            match_keywords=[term],
+            match_keywords=[term, term.replace("www.", "")],
             avoid_slugs=avoid_slugs,
-            pick_first_valid=True,
+            pick_first_valid=False,
             min_duration=min_duration,
             max_duration=max_duration,
         )
-        if ok:
+        if ok and trustpilot._url_matches_slug(page.url, term):
             pages += 1
             logger.info("Landed via search → %s", page.url)
         else:
@@ -107,11 +115,15 @@ def _land_rank_page_via_search(
     locale: str,
     min_duration: int,
     max_duration: int,
-    max_attempts: int = 3,
+    max_attempts: int = 5,
 ) -> tuple[bool, str]:
     """Pick a List B page at random and reach it via Trustpilot search."""
     tried: set[str] = set()
     last_term = ""
+
+    logger.info("Starting List B — fresh Trustpilot home before rank page search")
+    if not _open_trustpilot_home(page, locale):
+        return False, ""
 
     for attempt in range(max_attempts):
         pool = [t for t in rank_terms if t.lower() not in tried] or rank_terms
@@ -132,11 +144,11 @@ def _land_rank_page_via_search(
             min_duration=min_duration,
             max_duration=max_duration,
         )
-        if ok and term.lower() in page.url.lower():
+        if ok and trustpilot._url_matches_slug(page.url, term):
             return True, term
         if ok:
             logger.warning("Rank search landed on wrong page: %s (wanted %s)", page.url, term)
-        _ensure_searchable(page, locale)
+        _open_trustpilot_home(page, locale)
 
     return False, last_term
 
@@ -172,8 +184,12 @@ def _reach_target_from_rank_page(
                 logger.info("Target reached via on-page link → %s", page.url)
                 return True
 
-    term = search_term or (target_keywords[0] if target_keywords else trustpilot._domain_from_url(trustpilot_target))
-    search_terms = [term] + [k for k in target_keywords if k.lower() != term.lower()]
+    search_terms: list[str] = []
+    for candidate in [search_term, *target_keywords]:
+        if candidate and candidate.lower() not in {s.lower() for s in search_terms}:
+            search_terms.append(candidate)
+    if not search_terms:
+        search_terms = [trustpilot._domain_from_url(trustpilot_target)]
 
     for i, try_term in enumerate(search_terms):
         logger.info("Target — search '%s' from rank page (attempt %d/%d)", try_term, i + 1, len(search_terms))

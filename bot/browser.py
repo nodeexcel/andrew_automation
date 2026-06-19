@@ -56,6 +56,7 @@ def browser_session(
     headless: bool = True,
     proxy: str | None = None,
     device: DeviceProfile | None = None,
+    trustpilot_locale: str = "www",
 ) -> Generator[tuple[Playwright, Browser, BrowserContext, Page], None, None]:
     """
     Create a Playwright browser session with device emulation and optional proxy.
@@ -68,6 +69,13 @@ def browser_session(
     else:
         logger.warning("No proxy configured — browser will use your real IP")
 
+    if trustpilot_locale in ("www", ""):
+        browser_locale = "en-US"
+        accept_language = "en-US,en;q=0.9"
+    else:
+        browser_locale = f"{trustpilot_locale}-{trustpilot_locale.upper()}"
+        accept_language = f"{browser_locale},{trustpilot_locale};q=0.9,en;q=0.8"
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
 
@@ -78,12 +86,12 @@ def browser_session(
                 "height": profile.viewport_height,
             },
             "is_mobile": profile.is_mobile,
-            "locale": "de-DE",
+            "locale": browser_locale,
             "timezone_id": random.choice(
                 ["Europe/Berlin", "Europe/Vienna", "Europe/Zurich", "Europe/Amsterdam"]
             ),
             "extra_http_headers": {
-                "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+                "Accept-Language": accept_language,
             },
         }
 
@@ -111,7 +119,10 @@ def human_scroll(page: Page, duration_seconds: float) -> None:
         direction = 1 if random.random() > 0.15 else -1
 
         scroll_position = max(0, scroll_position + scroll_amount * direction)
-        page.evaluate(f"window.scrollTo({{top: {scroll_position}, behavior: 'smooth'}})")
+        try:
+            page.evaluate(f"window.scrollTo({{top: {scroll_position}, behavior: 'smooth'}})")
+        except Exception:
+            pass
 
         if random.random() < 0.1:
             pause = random.uniform(1.5, 4.0)

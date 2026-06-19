@@ -82,7 +82,7 @@ def main() -> int:
         proxy = config.proxies[0]
         logger.info("Checking proxy: %s", proxy.split("@")[-1] if "@" in proxy else proxy)
         config.settings.headless = False
-        with browser_session(headless=False, proxy=proxy) as (_, _, _, page):
+        with browser_session(headless=False, proxy=proxy, trustpilot_locale=config.settings.trustpilot_locale) as (_, _, _, page):
             ip = verify_proxy_ip(page)
             print(f"\nBrowser IP through proxy: {ip}")
             print("If this matches your real IP, the proxy is NOT working.")
