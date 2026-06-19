@@ -98,7 +98,12 @@ def random_delay_ms(min_ms: int, max_ms: int) -> int:
 
 def _accept_cookies(page: Page) -> None:
     """Dismiss cookie consent banner if present."""
-    accepted = page.evaluate(
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=10000)
+    except Exception:
+        pass
+    try:
+        accepted = page.evaluate(
         """() => {
             const selectors = [
                 '#onetrust-accept-btn-handler',
@@ -115,7 +120,9 @@ def _accept_cookies(page: Page) -> None:
             if (match) { match.click(); return true; }
             return false;
         }"""
-    )
+        )
+    except Exception:
+        return
     if accepted:
         page.wait_for_timeout(random_delay_ms(1500, 2500))
 

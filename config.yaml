@@ -1,5 +1,4 @@
-# Trustpilot Bot Configuration
-# Copy this file to config.yaml and customize for your campaigns.
+# Trustpilot Bot — active configuration
 
 settings:
   run_duration_hours: 24
@@ -23,7 +22,7 @@ campaigns:
   - name: "xsbets campaign"
     enabled: true
 
-    # Three list files — search terms are extracted from URLs automatically
+    # Three list files (search terms extracted from URLs automatically)
     lists:
       random_browse_file: lists/list_a.txt   # List A — random Trustpilot searches
       rank_pages_file: lists/list_b.txt      # List B — pages we want listings on

@@ -131,9 +131,7 @@ def execute_job(job: Job, settings: Settings, proxy: str | None) -> JobResult:
                 click_external=settings.click_out_external,
             )
 
-            if job.job_type == JobType.DIRECT_VISIT:
-                outcome = journey.run_search_journey(**journey_kwargs, browse_only=True)
-            elif job.job_type == JobType.SUGGESTED_CLICK:
+            if job.job_type == JobType.SUGGESTED_CLICK:
                 outcome = journey.run_search_journey(**journey_kwargs, prefer_suggested=True)
             else:
                 outcome = journey.run_search_journey(**journey_kwargs)

@@ -1,3 +1,5 @@
+# First line: full Trustpilot review URL (must include /review/)
+# Following lines: search keywords (one per line)
 https://www.trustpilot.com/review/xsbets.com
 xsbets
 xsbets.com

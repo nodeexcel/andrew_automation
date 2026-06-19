@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Any
 import yaml
 
 from bot.lists import keywords_from_target_file, terms_from_file
+
+logger = logging.getLogger("trustpilot_bot")
 
 
 @dataclass
@@ -122,12 +125,46 @@ def load_config(path: str | Path) -> Config:
 
         random_terms = terms_from_file(list_a)
         rank_terms = terms_from_file(list_b)
-        target_url, target_keywords = keywords_from_target_file(target_file)
+        file_target_url, file_target_keywords = keywords_from_target_file(target_file)
+        target_url = file_target_url
+        target_keywords = file_target_keywords
 
         if c.get("target_url"):
-            target_url = str(c["target_url"])
+            config_target_url = str(c["target_url"])
+            if file_target_url and file_target_url != config_target_url:
+                logger.warning(
+                    "Campaign '%s': config.yaml target_url (%s) overrides "
+                    "lists/target.txt (%s). Edit config.yaml or remove target_url "
+                    "to use the file only.",
+                    c.get("name", "unnamed"),
+                    config_target_url,
+                    file_target_url,
+                )
+            target_url = config_target_url
         if c.get("target_keywords"):
-            target_keywords = list(c["target_keywords"])
+            config_keywords = list(c["target_keywords"])
+            if file_target_keywords and config_keywords != file_target_keywords:
+                logger.warning(
+                    "Campaign '%s': config.yaml target_keywords override lists/target.txt. "
+                    "Edit config.yaml or remove target_keywords to use the file only.",
+                    c.get("name", "unnamed"),
+                )
+            target_keywords = config_keywords
+
+        if not target_url:
+            raise ValueError(
+                f"Campaign '{c.get('name', 'unnamed')}': lists/target.txt has no valid "
+                "Trustpilot review URL. First line must be like:\n"
+                "  https://www.trustpilot.com/review/your-site.com\n"
+                "(Note: /review/ is required — not just trustpilot.com/your-site.com)"
+            )
+
+        logger.info(
+            "Campaign '%s' target: %s (keywords: %s)",
+            c.get("name", "unnamed"),
+            target_url,
+            ", ".join(target_keywords[:5]) or "none",
+        )
 
         jobs_data = c.get("jobs", {})
         campaigns.append(
