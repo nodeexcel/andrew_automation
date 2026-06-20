@@ -197,3 +197,36 @@ def get_config_path() -> Path:
     if Path("config.yaml").exists():
         return Path("config.yaml")
     return Path("config.example.yaml")
+
+
+def load_config_yaml(path: str | Path | None = None) -> tuple[Path, dict[str, Any]]:
+    """Load raw YAML dict (for editing) without resolving list files."""
+    config_path = Path(path) if path else get_config_path()
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+    with open(config_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return config_path, data
+
+
+def save_config_yaml(path: str | Path, data: dict[str, Any]) -> None:
+    """Write config dict to YAML."""
+    config_path = Path(path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def resolve_path(config_path: Path, rel: str) -> Path:
+    """Resolve a path relative to the config file directory."""
+    return config_path.parent / rel
+
+
+def campaign_list_paths(campaign: dict[str, Any], config_path: Path) -> dict[str, Path]:
+    """Return resolved paths for a campaign's list files."""
+    lists_section = campaign.get("lists", {})
+    return {
+        "list_a": resolve_path(config_path, lists_section.get("random_browse_file", "lists/list_a.txt")),
+        "list_b": resolve_path(config_path, lists_section.get("rank_pages_file", "lists/list_b.txt")),
+        "target": resolve_path(config_path, lists_section.get("target_file", "lists/target.txt")),
+    }

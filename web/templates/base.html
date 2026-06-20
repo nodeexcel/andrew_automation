@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Trustpilot Bot{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">TP</span>
+        <div>
+          <strong>Trustpilot Bot</strong>
+          <small>Automation Control</small>
+        </div>
+      </div>
+
+      <nav class="nav">
+        {% for endpoint, label, icon in nav_items %}
+        <a href="{{ url_for(endpoint) }}" class="nav-link {% if request.endpoint == endpoint %}active{% endif %}">
+          <span class="nav-icon nav-icon-{{ icon }}"></span>
+          {{ label }}
+        </a>
+        {% endfor %}
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-pill {% if bot_running %}running{% else %}stopped{% endif %}" id="status-pill">
+          <span class="status-dot"></span>
+          <span id="status-text">{{ 'Running' if bot_running else 'Stopped' }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-group">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

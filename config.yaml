@@ -1,5 +1,3 @@
-# Trustpilot Bot — active configuration
-
 settings:
   run_duration_hours: 24
   min_page_duration: 25
@@ -14,29 +12,17 @@ settings:
   min_journey_depth: 10
   max_journey_depth: 15
   click_out_external: true
-
 proxies:
   file: proxies.txt
-
 campaigns:
-  - name: "xsbets campaign"
-    enabled: true
-
-    # Three list files (search terms extracted from URLs automatically)
-    lists:
-      random_browse_file: lists/list_a.txt   # List A — random Trustpilot searches
-      rank_pages_file: lists/list_b.txt      # List B — pages we want listings on
-      target_file: lists/target.txt          # Target page + search keywords
-
-    # Target is loaded from lists/target.txt (first URL + keywords on following lines).
-    # Optional overrides — if set here, they take priority over lists/target.txt:
-    # target_url: https://www.trustpilot.com/review/your-target.com
-    # target_keywords:
-    #   - your-target
-    # external_target_urls:
-    #   - https://your-target.com
-    jobs:
-      direct_visit: 20
-      search_navigate: 30
-      suggested_click: 15
-      target_direct: 10
+- name: xsbets campaign
+  enabled: true
+  lists:
+    random_browse_file: lists/list_a.txt
+    rank_pages_file: lists/list_b.txt
+    target_file: lists/target.txt
+  jobs:
+    direct_visit: 20
+    search_navigate: 30
+    suggested_click: 15
+    target_direct: 10

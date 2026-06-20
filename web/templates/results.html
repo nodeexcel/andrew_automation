@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Results — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Results</h1>
+    <p class="subtitle">{{ success }} successful of {{ total }} total runs</p>
+  </div>
+  {% if has_excel %}
+  <a href="{{ url_for('results_download') }}" class="btn btn-primary">Download Excel</a>
+  {% endif %}
+</div>
+
+<section class="card">
+  {% if rows %}
+  <p class="hint">Every job is saved automatically. Click <strong>Download Excel</strong> to get the full report as a <code>.xlsx</code> file.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Job</th>
+          <th>Campaign</th>
+          <th>Target reached</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.time }}</td>
+          <td><code>{{ row.job_type }}</code></td>
+          <td>{{ row.campaign }}</td>
+          <td>{{ row.target_reached }}</td>
+          <td>
+            <span class="badge {% if row.success == 'success' %}badge-success{% else %}badge-fail{% endif %}">
+              {{ row.success }}
+            </span>
+          </td>
+        </tr>
+        {% if row.error %}
+        <tr class="error-row">
+          <td colspan="5"><small>{{ row.error }}</small></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No results yet. Go to the Dashboard and click <strong>Run test</strong>.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Proxies — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Proxies</h1>
+    <p class="subtitle">Add your proxy credentials — one per line. The bot rotates through them automatically.</p>
+  </div>
+</div>
+
+<form method="post" class="card form-card">
+  <p class="hint">
+  <strong>{{ loaded_count }}</strong> proxy{% if loaded_count != 1 %}ies{% endif %} loaded.
+  Format: <code>http://username:password@host:port</code>
+  </p>
+
+  <label class="editor-label">
+    Proxy list
+    <textarea name="content" rows="16" spellcheck="false" class="code-area"
+      placeholder="http://user:pass@proxy.example.com:8080">{{ content }}</textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save proxies</button>
+  </div>
+</form>
+
+<form method="post" action="{{ url_for('bot_check_proxy') }}" class="form-inline-delete"
+  onsubmit="return confirm('Opens a browser to verify your first proxy. Continue?');">
+  <button type="submit" class="btn btn-secondary">Test first proxy</button>
+</form>
+
+{% if command_output %}
+<section class="card">
+  <h2>Proxy test result</h2>
+  <pre class="log-box">{{ command_output }}</pre>
+</section>
+{% endif %}
+{% endblock %}

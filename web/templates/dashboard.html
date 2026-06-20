@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="subtitle">Start the bot, check progress, and review results.</p>
+  </div>
+</div>
+
+{% if not setup.ready %}
+<section class="card setup-card">
+  <h2>Setup checklist</h2>
+  <p class="hint">Complete these steps before starting the bot.</p>
+  <ul class="checklist">
+    {% for item in setup.issues %}
+    <li class="check-item check-fail">
+      <span>{{ item.message }}</span>
+      <a href="{{ url_for(item.fix_url) }}" class="btn btn-small btn-primary">{{ item.fix_label }}</a>
+    </li>
+    {% endfor %}
+    {% for item in setup.warnings %}
+    <li class="check-item check-warn">
+      <span>{{ item.message }}</span>
+      <a href="{{ url_for(item.fix_url) }}" class="btn btn-small btn-secondary">{{ item.fix_label }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% elif setup.warnings %}
+<section class="card setup-card">
+  <h2>Recommendations</h2>
+  <ul class="checklist">
+    {% for item in setup.warnings %}
+    <li class="check-item check-warn">
+      <span>{{ item.message }}</span>
+      <a href="{{ url_for(item.fix_url) }}" class="btn btn-small btn-secondary">{{ item.fix_label }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if stats.total_runs == 0 and setup.ready %}
+<section class="card steps-card">
+  <h2>Quick start</h2>
+  <ol class="steps-list">
+    <li><strong>Campaign</strong> — set your target Trustpilot page and search keywords</li>
+    <li><strong>Browse Lists</strong> — add Trustpilot URLs for random browsing and rank pages</li>
+    <li><strong>Proxies</strong> — add your proxy credentials (recommended)</li>
+    <li>Click <strong>Run test</strong> below to verify everything works, then <strong>Start bot</strong></li>
+  </ol>
+</section>
+{% endif %}
+
+<section class="card-grid">
+  <div class="stat-card">
+    <span class="stat-label">Status</span>
+    <span class="stat-value {% if bot_running %}text-success{% else %}text-muted{% endif %}" id="dash-status">
+      {{ 'Running' if bot_running else 'Stopped' }}
+    </span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Planned jobs</span>
+    <span class="stat-value">{{ stats.job_count or 0 }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Proxies</span>
+    <span class="stat-value">{{ stats.proxy_count or 0 }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Success rate</span>
+    <span class="stat-value">{{ stats.success_rate or 0 }}%</span>
+    <span class="stat-meta">{{ stats.success_count or 0 }} / {{ stats.total_runs or 0 }} runs</span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Actions</h2>
+
+  <div class="action-row">
+    {% if bot_running %}
+    <form method="post" action="{{ url_for('bot_stop') }}">
+      <button type="submit" class="btn btn-danger">Stop bot</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('bot_start') }}">
+      <button type="submit" class="btn btn-primary" {% if not setup.ready %}disabled title="Complete setup checklist first"{% endif %}>
+        Start bot
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('bot_test') }}">
+      <button type="submit" class="btn btn-secondary" {% if not setup.ready %}disabled{% endif %}
+        onclick="return confirm('Runs all 4 job types once in a visible browser. Continue?');">
+        Run test
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('bot_dry_run') }}">
+      <button type="submit" class="btn btn-secondary" {% if not setup.ready %}disabled{% endif %}>
+        Preview schedule
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if stats.job_summary %}
+  <div class="tag-row">
+    {% for line in stats.job_summary %}
+    <span class="tag">{{ line }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% if command_output %}
+<section class="card">
+  <h2>Preview output</h2>
+  <pre class="log-box">{{ command_output }}</pre>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-header-row">
+    <h2>Recent results</h2>
+    <div class="header-links">
+      {% if stats.total_runs > 0 %}
+      <a href="{{ url_for('results_download') }}" class="link">Download Excel</a>
+      <span class="link-sep">·</span>
+      {% endif %}
+      <a href="{{ url_for('results') }}" class="link">View all</a>
+    </div>
+  </div>
+
+  {% if stats.recent_results %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Job</th>
+          <th>Campaign</th>
+          <th>Target reached</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in stats.recent_results %}
+        <tr>
+          <td>{{ row.time }}</td>
+          <td><code>{{ row.job_type }}</code></td>
+          <td>{{ row.campaign }}</td>
+          <td>{{ row.target_reached }}</td>
+          <td>
+            <span class="badge {% if row.success == 'success' %}badge-success{% else %}badge-fail{% endif %}">
+              {{ row.success }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No results yet. Run a test to verify your setup.</p>
+  {% endif %}
+</section>
+{% endblock %}

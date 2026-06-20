@@ -69,3 +69,12 @@ class CsvReporter:
         with self._lock:
             with self.path.open("a", encoding="utf-8", newline="") as f:
                 csv.writer(f).writerow(row)
+            self._sync_excel()
+
+    def _sync_excel(self) -> None:
+        try:
+            from bot.export import sync_xlsx
+
+            sync_xlsx(self.path)
+        except Exception:
+            pass

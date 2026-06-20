@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Settings — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="subtitle">Timing, browser behavior, and how the bot runs.</p>
+  </div>
+</div>
+
+<form method="post" class="card form-card">
+  <fieldset>
+    <legend>Schedule</legend>
+    <div class="form-grid">
+      <label>
+        Run duration (hours)
+        <input type="number" name="run_duration_hours" step="0.5" min="0.5" value="{{ settings.run_duration_hours or 24 }}" required>
+        <small>How long the bot runs when you click Start</small>
+      </label>
+      <label>
+        Parallel browsers
+        <input type="number" name="max_workers" min="1" max="10" value="{{ settings.max_workers or 3 }}" required>
+        <small>More workers = faster, but uses more proxies</small>
+      </label>
+      <label>
+        Min wait between jobs (sec)
+        <input type="number" name="min_task_interval" min="0" value="{{ settings.min_task_interval or 180 }}" required>
+      </label>
+      <label>
+        Max wait between jobs (sec)
+        <input type="number" name="max_task_interval" min="0" value="{{ settings.max_task_interval or 900 }}" required>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Browsing behavior</legend>
+    <div class="form-grid">
+      <label>
+        Min time on page (sec)
+        <input type="number" name="min_page_duration" min="1" value="{{ settings.min_page_duration or 25 }}" required>
+      </label>
+      <label>
+        Max time on page (sec)
+        <input type="number" name="max_page_duration" min="1" value="{{ settings.max_page_duration or 90 }}" required>
+      </label>
+      <label>
+        Min pages per journey
+        <input type="number" name="min_journey_depth" min="1" value="{{ settings.min_journey_depth or 10 }}" required>
+      </label>
+      <label>
+        Max pages per journey
+        <input type="number" name="max_journey_depth" min="1" value="{{ settings.max_journey_depth or 15 }}" required>
+      </label>
+      <label>
+        Trustpilot region
+        <input type="text" name="trustpilot_locale" value="{{ settings.trustpilot_locale or 'www' }}" placeholder="www">
+        <small>www = global, or de, uk, etc.</small>
+      </label>
+    </div>
+
+    <div class="checkbox-row">
+      <label class="checkbox">
+        <input type="checkbox" name="headless" {% if settings.headless != false %}checked{% endif %}>
+        Run in background (no visible browser window)
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="click_out_external" {% if settings.click_out_external != false %}checked{% endif %}>
+        Click out to external website URLs
+      </label>
+    </div>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </div>
+</form>
+{% endblock %}

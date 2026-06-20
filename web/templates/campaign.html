@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Campaign — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Campaign</h1>
+    <p class="subtitle">Your target business and how often each action runs.</p>
+  </div>
+  <div class="action-row">
+    <form method="post" action="{{ url_for('campaign_add') }}">
+      <button type="submit" class="btn btn-secondary">+ New campaign</button>
+    </form>
+  </div>
+</div>
+
+{% if campaigns|length > 1 %}
+<div class="tab-row">
+  {% for c in campaigns %}
+  <a href="{{ url_for('campaign', i=loop.index0) }}" class="tab {% if loop.index0 == index %}active{% endif %}">
+    {{ c.name or 'Campaign ' ~ loop.index }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" class="card form-card">
+  <fieldset>
+    <legend>General</legend>
+    <div class="form-grid">
+      <label class="span-2">
+        Campaign name
+        <input type="text" name="name" value="{{ campaign.name or '' }}" required>
+      </label>
+      <label class="checkbox span-2">
+        <input type="checkbox" name="enabled" {% if campaign.enabled != false %}checked{% endif %}>
+        Campaign enabled
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Target business</legend>
+    <p class="hint">The Trustpilot review page you want visitors to reach, and what to search for.</p>
+    <div class="form-grid">
+      <label class="span-2">
+        Target Trustpilot URL
+        <input type="url" name="target_url" value="{{ target_url }}" required
+          placeholder="https://www.trustpilot.com/review/your-site.com">
+        <small>Must include <code>/review/</code> in the URL</small>
+      </label>
+      <label class="span-2">
+        Search keywords
+        <textarea name="target_keywords" rows="4" spellcheck="false"
+          placeholder="your-site.com&#10;your brand name">{{ target_keywords }}</textarea>
+        <small>One keyword per line — used when searching Trustpilot</small>
+      </label>
+      <label class="span-2">
+        External website URLs <span class="optional">(optional)</span>
+        <textarea name="external_urls" rows="3" spellcheck="false"
+          placeholder="https://your-site.com">{{ external_urls }}</textarea>
+        <small>Real website URLs to click out to (when “Click out to external sites” is on in Settings)</small>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Jobs per run</legend>
+    <p class="hint">How many times each action runs over the period set in Settings (default 24 hours).</p>
+    <div class="form-grid">
+      <label>
+        Direct visit
+        <input type="number" name="direct_visit" min="0" value="{{ campaign.jobs.direct_visit or 0 }}">
+        <small>Random browsing only</small>
+      </label>
+      <label>
+        Search navigate
+        <input type="number" name="search_navigate" min="0" value="{{ campaign.jobs.search_navigate or 0 }}">
+        <small>Search then click target</small>
+      </label>
+      <label>
+        Suggested click
+        <input type="number" name="suggested_click" min="0" value="{{ campaign.jobs.suggested_click or 0 }}">
+        <small>Click search suggestion</small>
+      </label>
+      <label>
+        Target direct
+        <input type="number" name="target_direct" min="0" value="{{ campaign.jobs.target_direct or 0 }}">
+        <small>Go straight to target page</small>
+      </label>
+    </div>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save campaign</button>
+    <a href="{{ url_for('lists', i=index) }}" class="btn btn-secondary">Edit browse lists</a>
+  </div>
+</form>
+
+{% if campaigns|length > 1 %}
+<form method="post" action="{{ url_for('campaign_delete') }}" class="form-inline-delete"
+  onsubmit="return confirm('Delete this campaign?');">
+  <input type="hidden" name="index" value="{{ index }}">
+  <button type="submit" class="btn btn-danger">Delete campaign</button>
+</form>
+{% endif %}
+
+{% if preview and not preview.error %}
+<section class="card muted-card">
+  <h2>Summary</h2>
+  <dl class="preview-list">
+    <div><dt>Browse terms loaded</dt><dd>{{ preview.list_a_count or 0 }}</dd></div>
+    <div><dt>Rank pages loaded</dt><dd>{{ preview.list_b_count or 0 }}</dd></div>
+    <div><dt>Total jobs per run</dt><dd>{{ preview.total_jobs or 0 }}</dd></div>
+  </dl>
+</section>
+{% elif preview.error %}
+<section class="card">
+  <div class="flash flash-error">{{ preview.error }}</div>
+</section>
+{% endif %}
+{% endblock %}

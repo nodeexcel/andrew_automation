@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Logs — Trustpilot Bot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Logs</h1>
+    <p class="subtitle">Live activity from the bot (auto-refreshes every 15 seconds)</p>
+  </div>
+  <button type="button" class="btn btn-secondary" onclick="location.reload()">Refresh</button>
+</div>
+
+<section class="card">
+  {% if log_content %}
+  <pre class="log-box" id="log-content">{{ log_content }}</pre>
+  {% else %}
+  <p class="empty">No log activity yet. Start the bot or run a test.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  setInterval(() => location.reload(), 15000);
+</script>
+{% endblock %}

@@ -1,4 +1,3 @@
-# First line: full Trustpilot review URL (must include /review/)
 https://www.trustpilot.com/review/betti-sister-sites.uk
 betti sister sites
 betti-sister-sites.uk
