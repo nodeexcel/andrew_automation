@@ -77,23 +77,18 @@ def create_app() -> Flask:
 
         csv_path = config_path.parent / config.settings.csv_file
         rows: list[dict[str, str]] = []
-        success_count = 0
         if csv_path.exists():
             with csv_path.open(encoding="utf-8", newline="") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
-                success_count = sum(1 for r in rows if r.get("success") == "success")
 
-        total = len(rows)
         return {
             "campaign_count": len(config.campaigns),
             "enabled_count": len(enabled),
             "job_count": len(jobs),
             "job_summary": _job_type_summary(jobs),
             "proxy_count": len(config.proxies),
-            "total_runs": total,
-            "success_count": success_count,
-            "success_rate": round(success_count / total * 100, 1) if total else 0,
+            "total_runs": len(rows),
             "recent_results": list(reversed(rows[-8:])),
         }
 
