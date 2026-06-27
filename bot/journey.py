@@ -7,7 +7,7 @@ import random
 import re
 from urllib.parse import urlparse
 
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from bot.browser import dwell_on_page
 from bot.journey_result import JourneyResult
@@ -209,46 +209,148 @@ def _reach_target_from_rank_page(
     return False
 
 
+def _normalize_host(host: str) -> str:
+    return host.lower().replace("www.", "").strip()
+
+
+def _is_external_url(url: str) -> bool:
+    try:
+        return bool(url) and "trustpilot.com" not in urlparse(url).netloc.lower()
+    except Exception:
+        return False
+
+
+def _external_hosts(
+    external_urls: list[str],
+    trustpilot_target: str,
+    target_keywords: list[str],
+) -> set[str]:
+    """Domains we may click out to (from config + target slug/keywords)."""
+    hosts: set[str] = set()
+    for raw in external_urls:
+        if not raw or "trustpilot.com" in raw:
+            continue
+        url = raw if "://" in raw else f"https://{raw}"
+        host = urlparse(url).netloc
+        if host:
+            hosts.add(_normalize_host(host))
+
+    match = re.search(r"/review/([^/?#]+)", trustpilot_target or "")
+    if match:
+        hosts.add(_normalize_host(match.group(1)))
+
+    for kw in target_keywords:
+        k = kw.strip()
+        if k and ("." in k or (match and " " not in k)):
+            hosts.add(_normalize_host(k))
+
+    return {h for h in hosts if h and "trustpilot" not in h}
+
+
+def _host_matches_allowed(host: str, allowed: set[str]) -> bool:
+    if not host or "trustpilot.com" in host:
+        return False
+    if not allowed:
+        return True
+    h = _normalize_host(host)
+    return h in allowed or any(h == d or h.endswith(f".{d}") for d in allowed)
+
+
+def _click_link_to_external(
+    page: Page,
+    locator,
+    min_duration: int,
+    max_duration: int,
+) -> str | None:
+    """Click a link; return external URL (handles new tab or same-tab navigation)."""
+    locator.scroll_into_view_if_needed()
+    page.wait_for_timeout(trustpilot.random_delay_ms(500, 1200))
+    context = page.context
+
+    try:
+        with context.expect_page(timeout=10000) as new_page_info:
+            locator.click(timeout=10000)
+        new_page = new_page_info.value
+        new_page.wait_for_load_state("domcontentloaded", timeout=45000)
+        new_page.wait_for_timeout(trustpilot.random_delay_ms(2000, 4000))
+        if _is_external_url(new_page.url):
+            dwell_on_page(new_page, min_duration, max_duration)
+            logger.info("Clicked out (new tab) → %s", new_page.url)
+            return new_page.url
+        new_page.close()
+    except PlaywrightTimeoutError:
+        pass
+    except Exception as exc:
+        logger.debug("New-tab click-out: %s", exc)
+
+    page.wait_for_timeout(trustpilot.random_delay_ms(1500, 3000))
+    if _is_external_url(page.url):
+        dwell_on_page(page, min_duration, max_duration)
+        logger.info("Clicked out (same tab) → %s", page.url)
+        return page.url
+
+    return None
+
+
+_BUSINESS_LINK_SELECTORS = (
+    'a[data-business-unit-link="true"]',
+    'a[data-business-unit-website-link="true"]',
+    'a[name="visit-website-button"]',
+    'header a[target="_blank"][href^="http"]:not([href*="trustpilot"])',
+)
+
+
 def click_out_to_external(
     page: Page,
     external_urls: list[str],
+    trustpilot_target: str,
+    target_keywords: list[str],
     min_duration: int,
     max_duration: int,
-) -> bool:
-    """Click from Trustpilot review page to the real business website."""
-    allowed = {
-        urlparse(u).netloc.lower().replace("www.", "")
-        for u in external_urls
-        if u and "trustpilot.com" not in u
-    }
-    logger.info("External click-out → %s", ", ".join(allowed) or "any")
+) -> str | None:
+    """Click from Trustpilot review page to the real business website. Returns external URL or None."""
+    allowed = _external_hosts(external_urls, trustpilot_target, target_keywords)
+    if not allowed:
+        logger.debug("External click-out skipped — no external domains")
+        return None
 
-    business_link = page.locator('a[data-business-unit-link="true"]').first
-    if business_link.count() > 0:
+    logger.info("External click-out → %s", ", ".join(sorted(allowed)))
+
+    for selector in _BUSINESS_LINK_SELECTORS:
+        link = page.locator(selector).first
+        if link.count() == 0:
+            continue
         try:
-            href = business_link.get_attribute("href") or ""
-            host = urlparse(href).netloc.lower().replace("www.", "")
-            if host and "trustpilot.com" not in host and (
-                not allowed or host in allowed or any(host.endswith(d) for d in allowed)
-            ):
-                business_link.scroll_into_view_if_needed()
-                page.wait_for_timeout(trustpilot.random_delay_ms(500, 1200))
-                business_link.click()
-                page.wait_for_load_state("domcontentloaded", timeout=45000)
-                page.wait_for_timeout(trustpilot.random_delay_ms(2000, 4000))
-                if "trustpilot.com" not in urlparse(page.url).netloc:
-                    dwell_on_page(page, min_duration, max_duration)
-                    logger.info("Clicked out via business link → %s", page.url)
-                    return True
-        except Exception:
-            pass
+            href = link.get_attribute("href") or ""
+            host = _normalize_host(urlparse(href).netloc)
+            if href and _host_matches_allowed(host, allowed):
+                out = _click_link_to_external(page, link, min_duration, max_duration)
+                if out:
+                    return out
+        except Exception as exc:
+            logger.debug("Selector %s failed: %s", selector, exc)
 
-    candidates = page.evaluate(
+    for label in ("Visit website", "Open website", "Go to website"):
+        try:
+            link = page.get_by_role("link", name=label, exact=False).first
+            if link.count() == 0:
+                continue
+            href = link.get_attribute("href") or ""
+            host = _normalize_host(urlparse(href).netloc)
+            if href and _host_matches_allowed(host, allowed):
+                out = _click_link_to_external(page, link, min_duration, max_duration)
+                if out:
+                    return out
+        except Exception:
+            continue
+
+    candidates: list[str] = page.evaluate(
         """(allowed) => {
             const links = [];
             const seen = new Set();
             for (const el of document.querySelectorAll('a[href]')) {
-                if (!el.href || el.offsetParent === null) continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) continue;
                 let host = '';
                 try { host = new URL(el.href).hostname.replace(/^www\\./, ''); } catch { continue; }
                 if (!host || host.includes('trustpilot.com')) continue;
@@ -264,20 +366,19 @@ def click_out_to_external(
 
     for href in candidates:
         try:
+            host = _normalize_host(urlparse(href).netloc)
+            if not _host_matches_allowed(host, allowed):
+                continue
             link = page.locator(f'a[href="{href}"]').first
             if link.count() == 0:
                 continue
-            link.click()
-            page.wait_for_load_state("domcontentloaded", timeout=45000)
-            page.wait_for_timeout(trustpilot.random_delay_ms(2000, 4000))
-            if "trustpilot.com" not in urlparse(page.url).netloc:
-                dwell_on_page(page, min_duration, max_duration)
-                logger.info("Clicked out → %s", page.url)
-                return True
+            out = _click_link_to_external(page, link, min_duration, max_duration)
+            if out:
+                return out
         except Exception:
             continue
 
-    return not external_urls
+    return None
 
 
 def run_search_journey(
@@ -358,11 +459,19 @@ def run_search_journey(
     dwell_on_page(page, min_duration, max_duration)
     logger.info("On target page → %s", page.url)
 
-    if click_external and external_urls:
-        if click_out_to_external(page, external_urls, min_duration, max_duration):
+    if click_external:
+        out_url = click_out_to_external(
+            page,
+            external_urls,
+            trustpilot_target,
+            target_keywords,
+            min_duration,
+            max_duration,
+        )
+        if out_url:
             result.external_clicked = True
-            result.final_url = page.url
-        else:
+            result.final_url = out_url
+        elif _external_hosts(external_urls, trustpilot_target, target_keywords):
             logger.warning("External click-out failed — target page was still reached")
 
     result.success = result.target_reached
